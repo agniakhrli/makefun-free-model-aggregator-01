@@ -109,8 +109,9 @@ function argumentsOf(value: unknown): Json {
 export function stopReasonOf(finish: unknown): string {
   if (finish === 'length') return 'max_tokens';
   if (finish === 'tool_calls' || finish === 'function_call') return 'tool_use';
-  if (finish === 'content_filter') return 'refusal';
-  return 'end_turn';
+  if (finish === 'content_filter' || finish === 'refusal') return 'refusal';
+  if (finish === 'stop') return 'end_turn';
+  return typeof finish === 'string' && finish !== '' ? finish : 'end_turn';
 }
 
 /**
