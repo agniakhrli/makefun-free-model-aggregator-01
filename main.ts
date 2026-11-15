@@ -52,7 +52,6 @@ let probes: Probe[] = [];
 let catalog: CatalogReport = { providers: [] };
 let manifestIndex = 0;
 
-const exhaustedProviders = new Set<string>();
 const providerCalls = new Map<string, number>();
 
 function log(message: string): void {
@@ -87,11 +86,11 @@ interface Candidate {
   rating: number;
 }
 
-function candidatesFor(requires: Requirement): Candidate[] {
+function candidatesFor(requires: Requirement, exhausted: Set<string>): Candidate[] {
   const out: Candidate[] = [];
   for (const probe of probes) {
     if (!probe.ok) continue;
-    if (exhaustedProviders.has(probe.provider.id)) continue;
+    if (exhausted.has(probe.provider.id)) continue;
     for (const model of probe.models) {
       const row = ratingOfModel(brief.ratings, probe.provider.id, model.id);
       if (!modelFree(model, row)) continue;
@@ -102,6 +101,9 @@ function candidatesFor(requires: Requirement): Candidate[] {
   }
   out.sort((a, b) => {
     if (b.rating !== a.rating) return b.rating - a.rating;
+    const ctxA = a.model.context_length ?? 0;
+    const ctxB = b.model.context_length ?? 0;
+    if (ctxA !== ctxB) return ctxB - ctxA;
     const countA = providerCalls.get(a.probe.provider.id) ?? 0;
     const countB = providerCalls.get(b.probe.provider.id) ?? 0;
     if (countA !== countB) return countA - countB;
@@ -186,10 +188,14 @@ async function invokeUpstream(
   isStreaming: boolean,
   requires: Requirement
 ): Promise<{ upstream: Response; candidate: Candidate; callsCost: number } | null> {
-  const candidates = candidatesFor(requires);
+  const exhausted = new Set<string>();
   let callsCost = 0;
 
-  for (const candidate of candidates) {
+  for (;;) {
+    const candidates = candidatesFor(requires, exhausted);
+    if (candidates.length === 0) break;
+    const candidate = candidates[0];
+
     callsCost += 1;
     providerCalls.set(candidate.probe.provider.id, (providerCalls.get(candidate.probe.provider.id) ?? 0) + 1);
 
@@ -247,11 +253,12 @@ async function invokeUpstream(
         body: JSON.stringify(upstreamBody),
       });
     } catch {
+      exhausted.add(candidate.probe.provider.id);
       continue;
     }
 
     if (upstream.status === 402 || upstream.status === 429 || upstream.status >= 500) {
-      exhaustedProviders.add(candidate.probe.provider.id);
+      exhausted.add(candidate.probe.provider.id);
       try { await upstream.arrayBuffer(); } catch {}
       continue;
     }
