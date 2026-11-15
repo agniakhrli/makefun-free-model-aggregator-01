@@ -344,7 +344,9 @@ export function meetsRequirements(requires: Requirement, caps: Capabilities): bo
   if (requires.tools === true && caps.tools !== true) return false;
   if (requires.vision === true && caps.vision !== true) return false;
   if (requires.json === true && caps.json !== true) return false;
-  if (requires.min_context !== undefined && (caps.context_length === null || caps.context_length < requires.min_context)) return false;
+  if (requires.min_context !== undefined) {
+    if (caps.context_length === null || caps.context_length < requires.min_context) return false;
+  }
   return true;
 }
 
